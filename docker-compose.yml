@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  # Main test execution service
+  test-runner:
+    build: .
+    volumes:
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+      - ./screenshots:/app/screenshots
+    environment:
+      - HEADLESS=true
+      - BROWSER=chrome
+      - BASE_URL=https://www.google.com
+      - ENVIRONMENT=docker
+    command: pytest --headless --browser=chrome -v
+    depends_on:
+      - selenium-hub
+    networks:
+      - selenium-grid
+
+  # Selenium Grid Hub
+  selenium-hub:
+    image: selenium/hub:4.15.0
+    container_name: selenium-hub
+    ports:
+      - "4442:4442"
+      - "4443:4443"
+      - "4444:4444"
+    environment:
+      - GRID_MAX_SESSION=16
+      - GRID_BROWSER_TIMEOUT=300
+      - GRID_TIMEOUT=300
+    networks:
+      - selenium-grid
+
+  # Chrome Node
+  chrome-node:
+    image: selenium/node-chrome:4.15.0
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+      - NODE_MAX_INSTANCES=4
+      - NODE_MAX_SESSION=4
+    volumes:
+      - /dev/shm:/dev/shm
+    networks:
+      - selenium-grid
+    scale: 2
+
+  # Firefox Node
+  firefox-node:
+    image: selenium/node-firefox:4.15.0
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+      - NODE_MAX_INSTANCES=4
+      - NODE_MAX_SESSION=4
+    volumes:
+      - /dev/shm:/dev/shm
+    networks:
+      - selenium-grid
+
+  # Edge Node
+  edge-node:
+    image: selenium/node-edge:4.15.0
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+      - NODE_MAX_INSTANCES=4
+      - NODE_MAX_SESSION=4
+    volumes:
+      - /dev/shm:/dev/shm
+    networks:
+      - selenium-grid
+
+  # Test execution with remote grid
+  test-remote:
+    build: .
+    volumes:
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+      - ./screenshots:/app/screenshots
+    environment:
+      - REMOTE_EXECUTION=true
+      - SELENIUM_HUB_URL=http://selenium-hub:4444/wd/hub
+      - BROWSER=chrome
+      - BASE_URL=https://www.google.com
+      - ENVIRONMENT=docker-grid
+    command: pytest --remote --hub-url=http://selenium-hub:4444/wd/hub -v
+    depends_on:
+      - selenium-hub
+      - chrome-node
+    networks:
+      - selenium-grid
+
+  # Allure report service
+  allure-report:
+    image: frankescobar/allure-docker-service
+    container_name: allure-report
+    ports:
+      - "5050:5050"
+    environment:
+      CHECK_RESULTS_EVERY_SECONDS: 3
+      KEEP_HISTORY: 1
+    volumes:
+      - ./reports/allure-results:/app/allure-results
+      - ./reports/allure-reports:/app/default-reports
+    networks:
+      - selenium-grid
+
+networks:
+  selenium-grid:
+    driver: bridge
+
+volumes:
+  allure-results:
+  allure-reports:

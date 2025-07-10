@@ -1,0 +1,59 @@
+# Template repository cleanup configuration
+# This file helps users customize the template when they create a new repository
+
+name: Template Cleanup
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  template-cleanup:
+    name: Template Cleanup
+    runs-on: ubuntu-latest
+    if: github.event.repository.name != 'selenium-python-automation-framework'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cleanup template files
+      run: |
+        # Remove template-specific files
+        rm -f .github/template-cleanup.yml
+        rm -f FRAMEWORK_SUMMARY.md
+
+        # Update repository name in files
+        REPO_NAME="${{ github.event.repository.name }}"
+        REPO_OWNER="${{ github.repository_owner }}"
+
+        # Update README.md
+        sed -i "s/Exemplify777\/selenium-python-framework/${REPO_OWNER}\/${REPO_NAME}/g" README.md
+        sed -i "s/selenium-python-framework/${REPO_NAME}/g" README.md
+
+        # Update pyproject.toml
+        sed -i "s/selenium-python-framework/${REPO_NAME}/g" pyproject.toml
+        sed -i "s/Exemplify777/${REPO_OWNER}/g" pyproject.toml
+
+        # Update CHANGELOG.md
+        sed -i "s/Exemplify777\/selenium-python-framework/${REPO_OWNER}\/${REPO_NAME}/g" CHANGELOG.md
+
+        # Update GitHub Actions workflow
+        sed -i "s/Exemplify777\/selenium-python-framework/${REPO_OWNER}\/${REPO_NAME}/g" .github/workflows/test-automation.yml
+
+        echo "Template cleanup completed for ${REPO_OWNER}/${REPO_NAME}"
+
+    - name: Commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git diff --staged --quiet || git commit -m "🔧 Template cleanup: Update repository references"
+        git push

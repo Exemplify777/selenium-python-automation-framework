@@ -1,0 +1,346 @@
+name: Test Automation CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: 'Browser to use for testing'
+        required: false
+        default: 'chrome'
+        type: choice
+        options:
+          - chrome
+          - firefox
+          - edge
+      environment:
+        description: 'Test environment'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      test_suite:
+        description: 'Test suite to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - smoke
+          - regression
+          - ui
+          - api
+
+env:
+  PYTHON_VERSION: '3.11'
+  BROWSER: ${{ github.event.inputs.browser || 'chrome' }}
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'staging' }}
+  HEADLESS: true
+
+jobs:
+  lint-and-format:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run Black formatter check
+      run: black --check --diff .
+    
+    - name: Run isort import sorting check
+      run: isort --check-only --diff .
+    
+    - name: Run flake8 linting
+      run: flake8 .
+    
+    - name: Run mypy type checking
+      run: mypy framework/ --ignore-missing-imports
+      continue-on-error: true
+
+  test-matrix:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: lint-and-format
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox]
+        python-version: ['3.9', '3.10', '3.11']
+        exclude:
+          # Reduce matrix size - only test firefox with Python 3.11
+          - browser: firefox
+            python-version: '3.9'
+          - browser: firefox
+            python-version: '3.10'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          ${{ runner.os }}-pip-
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg unzip xvfb
+    
+    - name: Install Chrome
+      if: matrix.browser == 'chrome'
+      run: |
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+    
+    - name: Install Firefox
+      if: matrix.browser == 'firefox'
+      run: |
+        sudo apt-get install -y firefox
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create directories
+      run: |
+        mkdir -p reports/html
+        mkdir -p reports/allure-results
+        mkdir -p logs
+        mkdir -p screenshots
+    
+    - name: Run smoke tests
+      if: github.event.inputs.test_suite == 'smoke' || github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == ''
+      run: |
+        python -m pytest tests/ -m smoke \
+          --browser=${{ matrix.browser }} \
+          --headless \
+          --html=reports/html/smoke-report-${{ matrix.browser }}-py${{ matrix.python-version }}.html \
+          --self-contained-html \
+          --alluredir=reports/allure-results \
+          --tb=short \
+          -v
+      continue-on-error: true
+    
+    - name: Run UI tests
+      if: github.event.inputs.test_suite == 'ui' || github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == ''
+      run: |
+        python -m pytest tests/ui/ \
+          --browser=${{ matrix.browser }} \
+          --headless \
+          --html=reports/html/ui-report-${{ matrix.browser }}-py${{ matrix.python-version }}.html \
+          --self-contained-html \
+          --alluredir=reports/allure-results \
+          --tb=short \
+          -v
+      continue-on-error: true
+    
+    - name: Run API tests
+      if: github.event.inputs.test_suite == 'api' || github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == ''
+      run: |
+        python -m pytest tests/api/ \
+          --html=reports/html/api-report-py${{ matrix.python-version }}.html \
+          --self-contained-html \
+          --alluredir=reports/allure-results \
+          --tb=short \
+          -v
+      continue-on-error: true
+    
+    - name: Upload test reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-reports-${{ matrix.browser }}-py${{ matrix.python-version }}
+        path: |
+          reports/
+          logs/
+          screenshots/
+        retention-days: 30
+    
+    - name: Upload Allure results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: allure-results-${{ matrix.browser }}-py${{ matrix.python-version }}
+        path: reports/allure-results/
+        retention-days: 30
+
+  parallel-tests:
+    name: Parallel Test Execution
+    runs-on: ubuntu-latest
+    needs: lint-and-format
+    if: github.event.inputs.test_suite == 'regression' || github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == ''
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg unzip xvfb google-chrome-stable
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create directories
+      run: |
+        mkdir -p reports/html
+        mkdir -p reports/allure-results
+        mkdir -p logs
+        mkdir -p screenshots
+    
+    - name: Run tests in parallel
+      run: |
+        python -m pytest tests/ \
+          --browser=chrome \
+          --headless \
+          --html=reports/html/parallel-report.html \
+          --self-contained-html \
+          --alluredir=reports/allure-results \
+          --tb=short \
+          -n 4 \
+          --dist=loadfile \
+          -v
+      continue-on-error: true
+    
+    - name: Upload parallel test reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: parallel-test-reports
+        path: |
+          reports/
+          logs/
+          screenshots/
+        retention-days: 30
+
+  generate-allure-report:
+    name: Generate Allure Report
+    runs-on: ubuntu-latest
+    needs: [test-matrix, parallel-tests]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download all Allure results
+      uses: actions/download-artifact@v3
+      with:
+        path: allure-results
+    
+    - name: Merge Allure results
+      run: |
+        mkdir -p merged-allure-results
+        find allure-results -name "*.json" -exec cp {} merged-allure-results/ \;
+        find allure-results -name "*.txt" -exec cp {} merged-allure-results/ \;
+        find allure-results -name "*.properties" -exec cp {} merged-allure-results/ \;
+    
+    - name: Generate Allure Report
+      uses: simple-elf/allure-report-action@master
+      if: always()
+      with:
+        allure_results: merged-allure-results
+        allure_report: allure-report
+        gh_pages: gh-pages
+        allure_history: allure-history
+    
+    - name: Deploy Allure Report to GitHub Pages
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: allure-history
+        destination_dir: allure-report
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Bandit security scan
+      run: |
+        pip install bandit
+        bandit -r framework/ -f json -o bandit-report.json
+      continue-on-error: true
+    
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-scan-results
+        path: bandit-report.json
+        retention-days: 30
+
+  notify-results:
+    name: Notify Test Results
+    runs-on: ubuntu-latest
+    needs: [test-matrix, parallel-tests]
+    if: always()
+    
+    steps:
+    - name: Notify on success
+      if: needs.test-matrix.result == 'success' && needs.parallel-tests.result == 'success'
+      run: |
+        echo "✅ All tests passed successfully!"
+        echo "Browser: ${{ env.BROWSER }}"
+        echo "Environment: ${{ env.ENVIRONMENT }}"
+    
+    - name: Notify on failure
+      if: needs.test-matrix.result == 'failure' || needs.parallel-tests.result == 'failure'
+      run: |
+        echo "❌ Some tests failed!"
+        echo "Check the test reports for details."
+        exit 1

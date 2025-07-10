@@ -1,0 +1,42 @@
+{
+  "valid_users": [
+    {
+      "email": "test.user1@example.com",
+      "password": "TestPassword123!",
+      "first_name": "John",
+      "last_name": "Doe",
+      "phone": "+1-555-123-4567"
+    },
+    {
+      "email": "test.user2@example.com", 
+      "password": "SecurePass456@",
+      "first_name": "Jane",
+      "last_name": "Smith",
+      "phone": "+1-555-987-6543"
+    }
+  ],
+  "invalid_users": [
+    {
+      "email": "invalid-email",
+      "password": "weak",
+      "first_name": "",
+      "last_name": "",
+      "phone": "123"
+    },
+    {
+      "email": "",
+      "password": "",
+      "first_name": "Test",
+      "last_name": "User",
+      "phone": ""
+    }
+  ],
+  "admin_user": {
+    "email": "admin@example.com",
+    "password": "AdminPass789#",
+    "first_name": "Admin",
+    "last_name": "User",
+    "phone": "+1-555-000-0000",
+    "role": "administrator"
+  }
+}
