@@ -6,7 +6,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Template Repository](https://img.shields.io/badge/template-repository-brightgreen.svg)](https://github.com/Exemplify777/selenium-python-automation-framework/generate)
 
-A comprehensive, production-ready test automation framework built with Python, Selenium, and Selene. This framework provides a robust foundation for web application testing with modern best practices, rich reporting, and CI/CD integration.
+A test automation framework built with Python, Selenium, and Selene. This framework provides a robust foundation for web application testing with modern best practices, rich reporting, and CI/CD integration.
 
 > **🎯 Template Repository**: Click "Use this template" to create your own test automation project instantly!
 
